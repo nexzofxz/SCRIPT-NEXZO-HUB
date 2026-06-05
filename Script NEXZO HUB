@@ -15,20 +15,23 @@ local showHealthBar = false
 local showBox = false
 local showTracer = false
 
--- Novas Variáveis Universais (Fly, NoClip, Third Person, No Fog)
+-- Variáveis Universais (Fly, NoClip, Third Person, No Fog, FOV, X-Ray)
 local flyEnabled = false
 local flySpeed = 50
 local noclipEnabled = false
 local thirdPersonEnabled = false
 local noFogEnabled = false
+local defaultFOV = 70
+local xrayEnabled = false
 
 local camera = workspace.CurrentCamera
 local lPlayer = game.Players.LocalPlayer
 
--- Armazenamento de dados originais do mapa para restauração
+-- Armazenamento de dados originais para restauração
 local defaultFogStart = game:GetService("Lighting").FogStart
 local defaultFogEnd = game:GetService("Lighting").FogEnd
 local defaultAtmosphere = game:GetService("Lighting"):FindFirstChildOfClass("Atmosphere")
+local xrayCache = {} -- Guarda a transparência original dos blocos do mapa
 
 -- Tabelas de Cache de ESP Separadas
 local normalEspHighlights = {}
@@ -107,7 +110,7 @@ local function removeNormalESP(character)
 end
 
 
--- ================== FUNÇÃO: TEAM CHECK ESP (ALIADO: AZUL / INIMIGO: VERMELHO) ==================
+-- ================== FUNÇÃO: TEAM CHECK ESP ==================
 
 local function createTeamCheckESP(character, isAlly)
     if not character or teamCheckHighlights[character] then return end
@@ -158,7 +161,7 @@ local function removeTeamCheckESP(character)
 end
 
 
--- ================== FUNÇÃO: NPC ESP (VERMELHO) ==================
+-- ================== FUNÇÃO: NPC ESP ==================
 
 local function createNpcESP(model)
     if not model or npcHighlights[model] then return end
@@ -212,6 +215,33 @@ local function isNPC(model)
 end
 
 
+-- ================== FUNÇÃO: SISTEMA UNIVERSAL DE X-RAY ==================
+
+local function applyXray(state)
+    xrayEnabled = state
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and not obj:IsDescendantOf(lPlayer.Character) and not game.Players:GetPlayerFromCharacter(obj.Parent) then
+            -- Ignorar NPCs também para não quebrar o visual deles
+            if not obj.Parent:FindFirstChild("Humanoid") then
+                if state then
+                    if not xrayCache[obj] then
+                        xrayCache[obj] = obj.Transparency
+                    end
+                    obj.Transparency = 0.65
+                else
+                    if xrayCache[obj] then
+                        obj.Transparency = xrayCache[obj]
+                        xrayCache[obj] = nil
+                    else
+                        obj.Transparency = 0
+                    end
+                end
+            end
+        end
+    end
+end
+
+
 -- ================== ABA AIMBOT ==================
 local AimbotTab = Win:Tab("Aimbot", "crosshair")
 local AimPage = AimbotTab:Page("Combat Settings", "target")
@@ -235,7 +265,7 @@ AimSection:Toggle("Team Check ESP", "TeamCheckEspToggle", false, "ESP Separado (
 end)
 
 
--- ================== ABA MAIN (ATUALIZADA) ==================
+-- ================== ABA MAIN ==================
 local MainTab = Win:Tab("Main", "user")
 
 -- --- PÁGINA 1: MOVIMENTO ---
@@ -254,7 +284,6 @@ MovementSection:Toggle("Enable TpWalk", "TpWalkToggle", false, "Ativa o teletran
     tpWalkEnabled = state
 end)
 
--- Nova Seção: Movement Utilities (Lado Direito para Fly e NoClip)
 local MoveUtilSection = MovementPage:Section("Movement Utilities", "Right")
 
 MoveUtilSection:Toggle("Fly (Mobile Friendly)", "FlyToggle", false, "Voe na direcao que a camera aponta", function(state)
@@ -282,7 +311,6 @@ end)
 MoveUtilSection:Toggle("NoClip", "NoClipToggle", false, "Atravessa qualquer parede ou objeto do mapa", function(state)
     noclipEnabled = state
 end)
-
 
 -- --- PÁGINA 2: PULO (JUMP) ---
 local JumpPage = MainTab:Page("Jump Tweaks", "arrow-up") 
@@ -321,7 +349,7 @@ JumpSection:Toggle("Infinite Jump", "InfJump", false, "Permite pular repetidamen
 end)
 
 
--- ================== ABA VISUALS (ATUALIZADA) ==================
+-- ================== ABA VISUALS ==================
 local VisualsTab = Win:Tab("Visuals", "eye")
 
 -- --- PÁGINA 1: ESP ---
@@ -361,7 +389,7 @@ EspSettingsSection:Toggle("Tracer", "TracerESP", false, "Cria uma linha saindo d
 end)
 
 
--- --- PÁGINA 2: LIGHTING & ENVIRONMENT ---
+-- --- PÁGINA 2: LIGHTING & ENVIRONMENT (ATUALIZADA COM FOV E X-RAY) ---
 local LightingPage = VisualsTab:Page("Lighting", "sun")
 local LightingSection = LightingPage:Section("World Tweaks", "Left")
 
@@ -379,7 +407,7 @@ LightingSection:Toggle("Loop FullBright", "FullBright", false, "Deixa o mapa com
     end
 end)
 
--- Nova Seção: Camera & Environment (Lado Direito para Third Person e No Fog)
+-- Seção Direita: Camera, Environment, FOV e X-Ray
 local CamEnvSection = LightingPage:Section("Camera & Environment", "Right")
 
 CamEnvSection:Toggle("Third Person", "ThirdPersonToggle", false, "Forca o modo em terceira pessoa", function(state)
@@ -397,6 +425,17 @@ CamEnvSection:Toggle("No Fog", "NoFogToggle", false, "Remove completamente a nev
         Lighting.FogEnd = defaultFogEnd
         if defaultAtmosphere then defaultAtmosphere.Parent = Lighting end
     end
+end)
+
+-- Nova Opção: FOV Changer (Slider)
+CamEnvSection:Slider("Field of View", "FOVSlider", 70, 120, 70, function(val)
+    defaultFOV = val
+    camera.FieldOfView = val
+end)
+
+-- Nova Opção: X-Ray / Raio-X
+CamEnvSection:Toggle("X-Ray", "XrayToggle", false, "Deixa as paredes transparentes", function(state)
+    applyXray(state)
 end)
 
 
@@ -601,7 +640,7 @@ game:GetService("RunService").RenderStepped:Connect(function()
     end
 end)
 
--- Loop Heartbeat para Mecânicas Físicas e Modificadores Universais
+-- Loop Heartbeat para Mecânicas Físicas e Modificadores
 game:GetService("RunService").Heartbeat:Connect(function()
     local char = lPlayer.Character
     local humanoid = char and char:FindFirstChildOfClass("Humanoid")
@@ -618,7 +657,7 @@ game:GetService("RunService").Heartbeat:Connect(function()
             hrp.CFrame = hrp.CFrame + (humanoid.MoveDirection * (tpWalkSpeed / 100))
         end
         
-        -- Lógica de Altura de Pulo Customizada
+        -- Lógica de Altura de Pulo
         if jumpEnabled then
             if humanoid.UseJumpPower and humanoid.JumpPower ~= jumpHeightValue then
                 humanoid.JumpPower = jumpHeightValue
@@ -627,11 +666,10 @@ game:GetService("RunService").Heartbeat:Connect(function()
             end
         end
         
-        -- Lógica de Vôo Adaptada para Mobile (Segue a direção da Câmera + Analógico)
+        -- Lógica de Vôo
         local bv = hrp:FindFirstChild("NEXZO_FlyBV")
         if flyEnabled and bv then
             if humanoid.MoveDirection.Magnitude > 0 then
-                -- Move para onde o analógico aponta projetado na direção tridimensional da câmera
                 bv.Velocity = camera.CFrame.LookVector * flySpeed
             else
                 bv.Velocity = Vector3.new(0, 0, 0)
@@ -639,7 +677,7 @@ game:GetService("RunService").Heartbeat:Connect(function()
         end
     end
     
-    -- Lógica do NoClip (Roda no Heartbeat/Stepped para prevenir checagens de física do motor)
+    -- Lógica do NoClip
     if noclipEnabled and char then
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") and part.CanCollide then
@@ -648,17 +686,21 @@ game:GetService("RunService").Heartbeat:Connect(function()
         end
     end
     
-    -- Execução das modificações de Câmera e Iluminação em Tempo Real
+    -- Forçar Câmera e FOV em Tempo Real
     if thirdPersonEnabled then
         lPlayer.CameraMaxZoomDistance = 100
         lPlayer.CameraMinZoomDistance = 20
+    end
+    
+    if camera.FieldOfView ~= defaultFOV then
+        camera.FieldOfView = defaultFOV
     end
     
     if noFogEnabled then
         Lighting.FogStart = 9e9
         Lighting.FogEnd = 9e9
         local atm = Lighting:FindFirstChildOfClass("Atmosphere")
-        if atm then atm.Parent = nil end -- Remove temporariamente a atmosfera volumétrica se houver
+        if atm then atm.Parent = nil end
     end
     
     -- Limpeza Automática de Cache de mortos/desconectados
@@ -687,11 +729,14 @@ task.spawn(function()
             Lighting.ClockTime = 14
         end
         
-        -- Processamento dos loops independentes de ESP
+        -- Garante a persistência do X-Ray em novos objetos que forem carregados no mapa
+        if xrayEnabled then
+            applyXray(true)
+        end
+        
+        -- Loops de ESP
         for _, p in ipairs(game.Players:GetPlayers()) do
             if p ~= lPlayer and p.Character then
-                
-                -- 1. Loop Independente do ESP Normal (Sempre Azul)
                 if playersEspEnabled then
                     createNormalESP(p.Character)
                 else
@@ -699,14 +744,11 @@ task.spawn(function()
                     removeDrawing(p)
                 end
                 
-                -- 2. Loop Independente do Team Check ESP (Aliado Azul / Inimigo Vermelho)
                 if teamCheckEspEnabled then
-                    local isAlly = (p.Team == lPlayer.Team)
-                    createTeamCheckESP(p.Character, isAlly)
+                    createTeamCheckESP(p.Character, p.Team == lPlayer.Team)
                 else
                     removeTeamCheckESP(p.Character)
                 end
-                
             end
         end
         
@@ -747,3 +789,4 @@ end)
 -- ==============================================
 Library:Notification("Loaded", "NEXZO HUB Carregado com Sucesso!", 5)
 Library:ConfigSystem(Win)
+
